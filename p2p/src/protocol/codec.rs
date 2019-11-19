@@ -4,8 +4,8 @@
 use tokio_util::codec::{ Encoder, Decoder };
 use bytes::{BufMut, BytesMut};
 use std::{cmp, fmt, io, str, usize};
-use message::{Message, MessageResult, MessageHeader, Command, types, Error, deserialize_payload};
-use message::types::{Version, Verack};
+use message::{Message, MessageResult, MessageHeader, Command, types, Error, deserialize_payload };
+use message::types::{Version, Verack, Pong};
 use network::Magic;
 use crate::io::read_payload;
 use crate::bytes::Bytes;
@@ -21,18 +21,15 @@ enum CodecState {
 pub struct BitcoinCodec {
     magic: Magic,
     next_length: usize,
+    version: Version,
     header: Option<MessageHeader>,
 }
 
 #[derive(Debug)]
 pub enum BitcoinMessage {
-    version,
     ping,
-    pong,
-    handshake {
-        version: Version,
-        min_version: u32,
-	},
+    pong(u64),
+    version(u32),
     verack,
     message {
         command: Command,
@@ -41,8 +38,9 @@ pub enum BitcoinMessage {
 }
 
 impl BitcoinCodec {
-    pub fn new(magic: Magic) -> Self {
+    pub fn new(magic: Magic, version: Version) -> Self {
         BitcoinCodec {
+            version: version,
             magic,
             next_length: 24,
             header: None,
@@ -108,14 +106,7 @@ impl Decoder for BitcoinCodec {
     fn decode_eof(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, LinesCodecError> {
         Ok(match self.decode(buf)? {
             Some(frame) => Some(frame),
-            None => {
-                // No terminating newline - return remaining data, if any
-                if buf.is_empty() || buf == &b"\r"[..] {
-                    None
-                } else {
-                    None
-                }
-            }
+            None => None,
         })
     }
 }
@@ -126,17 +117,22 @@ impl Encoder for BitcoinCodec {
 
     fn encode(&mut self, item: Self::Item, buf: &mut BytesMut) -> Result<(), LinesCodecError> {
         match item {
-            BitcoinMessage::handshake{
-                version, min_version,
-            } => {
-                println!("magic = {:?}, version = {:?}, min_version = {:?},", self.magic, version, min_version);
-                let m = Message::new(self.magic, version.version(), &version).expect("version message should always be serialized correctly");
+            BitcoinMessage::version(min_version) => {
+                println!("magic = {:?}, min_version = {:?},", self.magic, min_version);
+                let m = Message::new(self.magic, self.version.version(), &self.version).expect("version message should always be serialized correctly");
                 buf.put(m.as_ref());
             },
 
             BitcoinMessage::verack => {
                 println!("send verack message");
                 let m = Message::new(self.magic, 0, &Verack).expect("verack message should always be serialized correctly");
+                buf.put(m.as_ref());
+            },
+
+            BitcoinMessage::pong(nonce) => {
+                println!("send pong message");
+                let pong = Pong::new(nonce);
+                let m = Message::new(self.magic, self.version.version(), &pong).expect("failed to create outgoing message");
                 buf.put(m.as_ref());
             },
 

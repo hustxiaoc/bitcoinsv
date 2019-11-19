@@ -11,7 +11,7 @@ use tokio_core::net::{TcpListener, TcpStream};
 use tokio_core::reactor::{Handle, Remote, Timeout, Interval};
 use abstract_ns::Resolver;
 use ns_dns_tokio::DnsResolver;
-use message::{types, Payload, MessageResult, Message, deserialize_payload};
+use message::{types, Payload, MessageResult, Message, deserialize_payload };
 use message::common::Services;
 use message::types::addr::AddressEntry;
 
@@ -471,17 +471,15 @@ impl P2P {
 				}
 			};
 
+			let version = config.connection.version(&sockAddr);
 			let mut stream = ScoketStream::connect(&sockAddr).await.unwrap();
-			let mut sock = Framed::new(stream, BitcoinCodec::new(config.connection.magic));
+			let mut sock = Framed::new(stream, BitcoinCodec::new(config.connection.magic, version.clone()));
 
 			println!("connected to {:?}", sockAddr);
 
 			// send a version message to remote node
-			let version = config.connection.version(&sockAddr);
-			sock.send(BitcoinMessage::handshake{
-				min_version: config.connection.protocol_minimum,
-				version: version.clone(),
-			}).await;
+			
+			sock.send(BitcoinMessage::version(config.connection.protocol_minimum)).await;
 
 			loop {
 				match sock.next().await {
@@ -498,7 +496,12 @@ impl P2P {
 							println!("peer is ready!");
 						} else if command == types::Inv::command() {
 							let message: types::Inv = deserialize_payload(payload.as_ref(), version.version()).unwrap();
+							// println!("message {:?}", message);
+						} else if command == types::Ping::command() {
+							let message: types::Ping = deserialize_payload(payload.as_ref(), version.version()).unwrap();
 							println!("message {:?}", message);
+							// we send pong message back
+							sock.send(BitcoinMessage::pong(message.nonce)).await;
 						}
 						// sock.get_ref().shutdown(net::Shutdown::Both);
 					},
@@ -509,20 +512,6 @@ impl P2P {
 					},
 				}
 			}
-
-			// loop {
-			// 	let message = match sock.next().await {
-			// 		Some(Ok(line)) => {
-			// 			println!("read: line");
-			// 		},
-
-			// 		// We didn't get a line so we return early here.
-			// 		_ => {
-			// 			println!("Client disconnected.");
-			// 			// return;
-			// 		}
-			// 	};
-			// }	
 		});
 
 		let resolver = DnsResolver::system_config(&self.event_loop_handle)?;
