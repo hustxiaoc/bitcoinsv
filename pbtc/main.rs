@@ -1,5 +1,4 @@
 //! Parity bitcoin client.
-
 #[macro_use]
 extern crate clap;
 #[macro_use]
@@ -18,17 +17,18 @@ extern crate message;
 extern crate network;
 extern crate p2p;
 extern crate sync;
-extern crate import;
+// extern crate import;
 extern crate rpc as ethcore_rpc;
 extern crate primitives;
 extern crate verification;
+extern crate tokio;
 
 mod commands;
 mod config;
 mod seednodes;
 mod util;
-mod rpc;
-mod rpc_apis;
+// mod rpc;
+// mod rpc_apis;
 
 use app_dirs::AppInfo;
 
@@ -39,19 +39,22 @@ pub const USER_AGENT: &'static str = "pbtc";
 pub const REGTEST_USER_AGENT: &'static str = "/Satoshi:0.12.1/";
 pub const LOG_INFO: &'static str = "sync=info";
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Always print backtrace on panic.
 	::std::env::set_var("RUST_BACKTRACE", "1");
 
-	if let Err(err) = run() {
+	if let Err(err) = run().await {
 		println!("{}", err);
 	}
+
+	Ok(())
 }
 
-fn run() -> Result<(), String> {
+async fn run() -> Result<(), String> {
 	let yaml = load_yaml!("cli.yml");
 	let matches = clap::App::from_yaml(yaml).get_matches();
-	let cfg = try!(config::parse(&matches));
+	let cfg = config::parse(&matches)?;
 
 	if !cfg.quiet {
 		if cfg!(windows) {
@@ -63,9 +66,5 @@ fn run() -> Result<(), String> {
 		env_logger::init();
 	}
 
-	match matches.subcommand() {
-		("import", Some(import_matches)) => commands::import(cfg, import_matches),
-		("rollback", Some(rollback_matches)) => commands::rollback(cfg, rollback_matches),
-		_ => commands::start(cfg),
-	}
+	commands::start(cfg).await
 }

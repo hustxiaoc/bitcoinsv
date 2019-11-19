@@ -1,8 +1,9 @@
 mod addr;
 mod ping;
 mod sync;
+mod codec;
 
-use bytes::Bytes;
+use crate::bytes::Bytes;
 use message::Error;
 use message::common::Command;
 
@@ -14,6 +15,7 @@ pub use self::sync::{SyncProtocol,
 	OutboundSyncConnection, OutboundSyncConnectionRef,
 	LocalSyncNode, LocalSyncNodeRef,
 };
+pub use self::codec::{BitcoinCodec, BitcoinMessage};
 
 pub trait Protocol: Send {
 	/// Initialize the protocol.

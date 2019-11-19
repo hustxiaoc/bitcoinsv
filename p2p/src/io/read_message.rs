@@ -4,7 +4,7 @@ use futures::{Poll, Future, Async};
 use tokio_io::AsyncRead;
 use network::Magic;
 use message::{MessageResult, Error, Payload};
-use io::{read_header, ReadHeader, read_payload, ReadPayload};
+use crate::io::{read_header, ReadHeader, read_payload, ReadPayload};
 
 pub fn read_message<M, A>(a: A, magic: Magic, version: u32) -> ReadMessage<M, A>
 	where A: AsyncRead, M: Payload {

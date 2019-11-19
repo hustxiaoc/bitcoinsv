@@ -1,7 +1,7 @@
 use tokio_io::io::{write_all, WriteAll};
-use session::Session;
-use io::{SharedTcpStream, read_any_message, ReadAnyMessage};
-use util::PeerInfo;
+use crate::session::Session;
+use crate::io::{SharedTcpStream, read_any_message, ReadAnyMessage};
+use crate::util::PeerInfo;
 
 pub struct Channel {
 	stream: SharedTcpStream,

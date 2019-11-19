@@ -3,11 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::{HashMap, HashSet};
 use parking_lot::RwLock;
-use net::{Connection, Channel};
-use p2p::Context;
-use session::{SessionFactory};
-use util::{Direction, PeerInfo};
-use PeerId;
+use crate::net::{Connection, Channel};
+use crate::p2p::Context;
+use crate::session::{SessionFactory};
+use crate::util::{Direction, PeerInfo, PeerId};
 
 const SYNCHRONOUS_RESPONSES: bool = true;
 

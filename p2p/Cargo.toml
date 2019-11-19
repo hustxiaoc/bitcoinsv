@@ -2,6 +2,7 @@
 name = "p2p"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
+edition = "2018"
 
 [dependencies]
 tokio-core = "0.1.6"
@@ -21,3 +22,8 @@ bitcrypto = { path = "../crypto" }
 message = { path = "../message" }
 serialization = { path = "../serialization" }
 network = { path = "../network" }
+
+tokio = { version = "=0.2.0-alpha.6", path = "../../tokio/tokio" }
+tokio-util = { version = "=0.2.0-alpha.6", path = "../../tokio/tokio-util" }
+tokio-dns-unofficial="0.4.0"
+bytes = "0.4.7"

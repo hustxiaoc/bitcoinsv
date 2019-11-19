@@ -4,14 +4,14 @@ use storage;
 use message::Services;
 use network::{Network, ConsensusParams, ConsensusFork, BitcoinCashConsensusParams};
 use p2p::InternetProtocol;
-use seednodes::{mainnet_seednodes, testnet_seednodes, bitcoin_cash_seednodes, bitcoin_cash_testnet_seednodes};
-use rpc_apis::ApiSet;
-use {USER_AGENT, REGTEST_USER_AGENT};
+use crate::seednodes::{mainnet_seednodes, testnet_seednodes, bitcoin_cash_seednodes, bitcoin_cash_testnet_seednodes};
+// use rpc_apis::ApiSet;
+use crate::{USER_AGENT, REGTEST_USER_AGENT};
 use primitives::hash::H256;
-use rpc::HttpConfiguration as RpcHttpConfig;
+// use rpc::HttpConfiguration as RpcHttpConfig;
 use verification::VerificationLevel;
 use sync::VerificationParameters;
-use util::open_db;
+use crate::util::open_db;
 
 pub struct Config {
 	pub network: Network,
@@ -29,7 +29,7 @@ pub struct Config {
 	pub data_dir: Option<String>,
 	pub user_agent: String,
 	pub internet_protocol: InternetProtocol,
-	pub rpc_config: RpcHttpConfig,
+	// pub rpc_config: RpcHttpConfig,
 	pub block_notify_command: Option<String>,
 	pub verification_params: VerificationParameters,
 	pub db: storage::SharedStore,
@@ -120,7 +120,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		}
 	};
 
-	let rpc_config = parse_rpc_config(network, matches)?;
+	// let rpc_config = parse_rpc_config(network, matches)?;
 
 	let block_notify_command = match matches.value_of("blocknotify") {
 		Some(s) => Some(s.parse().map_err(|_| "Invalid blocknotify commmand".to_owned())?),
@@ -165,7 +165,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		data_dir: data_dir,
 		user_agent: user_agent,
 		internet_protocol: only_net,
-		rpc_config: rpc_config,
+		// rpc_config: rpc_config,
 		block_notify_command: block_notify_command,
 		verification_params: VerificationParameters {
 			verification_level: verification_level,
@@ -189,12 +189,12 @@ fn parse_consensus_fork(network: Network, db: &storage::SharedStore, matches: &c
 		_ => return Err("You can only pass single fork argument: --btc, --bch".into()),
 	};
 
-	match &old_consensus_fork {
-		&None => db.set_consensus_fork(new_consensus_fork)?,
-		&Some(ref old_consensus_fork) if old_consensus_fork == new_consensus_fork => (),
-		&Some(ref old_consensus_fork) =>
-			return Err(format!("Cannot select '{}' fork with non-empty database of '{}' fork", new_consensus_fork, old_consensus_fork)),
-	}
+	// match &old_consensus_fork {
+	// 	&None => db.set_consensus_fork(new_consensus_fork)?,
+	// 	&Some(ref old_consensus_fork) if old_consensus_fork == new_consensus_fork => (),
+	// 	&Some(ref old_consensus_fork) =>
+	// 		return Err(format!("Cannot select '{}' fork with non-empty database of '{}' fork", new_consensus_fork, old_consensus_fork)),
+	// }
 
 	return match new_consensus_fork {
 		"btc" => Ok(ConsensusFork::BitcoinCore),
@@ -203,28 +203,29 @@ fn parse_consensus_fork(network: Network, db: &storage::SharedStore, matches: &c
 	};
 }
 
-fn parse_rpc_config(network: Network, matches: &clap::ArgMatches) -> Result<RpcHttpConfig, String> {
-	let mut config = RpcHttpConfig::with_port(network.rpc_port());
-	config.enabled = !matches.is_present("no-jsonrpc");
-	if !config.enabled {
-		return Ok(config);
-	}
 
-	if let Some(apis) = matches.value_of("jsonrpc-apis") {
-		config.apis = ApiSet::List(vec![apis.parse().map_err(|_| "Invalid APIs".to_owned())?].into_iter().collect());
-	}
-	if let Some(port) = matches.value_of("jsonrpc-port") {
-		config.port = port.parse().map_err(|_| "Invalid JSON RPC port".to_owned())?;
-	}
-	if let Some(interface) = matches.value_of("jsonrpc-interface") {
-		config.interface = interface.to_owned();
-	}
-	if let Some(cors) = matches.value_of("jsonrpc-cors") {
-		config.cors = Some(vec![cors.parse().map_err(|_| "Invalid JSON RPC CORS".to_owned())?]);
-	}
-	if let Some(hosts) = matches.value_of("jsonrpc-hosts") {
-		config.hosts = Some(vec![hosts.parse().map_err(|_| "Invalid JSON RPC hosts".to_owned())?]);
-	}
+// fn parse_rpc_config(network: Network, matches: &clap::ArgMatches) -> Result<RpcHttpConfig, String> {
+// 	let mut config = RpcHttpConfig::with_port(network.rpc_port());
+// 	config.enabled = !matches.is_present("no-jsonrpc");
+// 	if !config.enabled {
+// 		return Ok(config);
+// 	}
 
-	Ok(config)
-}
+// 	if let Some(apis) = matches.value_of("jsonrpc-apis") {
+// 		config.apis = ApiSet::List(vec![apis.parse().map_err(|_| "Invalid APIs".to_owned())?].into_iter().collect());
+// 	}
+// 	if let Some(port) = matches.value_of("jsonrpc-port") {
+// 		config.port = port.parse().map_err(|_| "Invalid JSON RPC port".to_owned())?;
+// 	}
+// 	if let Some(interface) = matches.value_of("jsonrpc-interface") {
+// 		config.interface = interface.to_owned();
+// 	}
+// 	if let Some(cors) = matches.value_of("jsonrpc-cors") {
+// 		config.cors = Some(vec![cors.parse().map_err(|_| "Invalid JSON RPC CORS".to_owned())?]);
+// 	}
+// 	if let Some(hosts) = matches.value_of("jsonrpc-hosts") {
+// 		config.hosts = Some(vec![hosts.parse().map_err(|_| "Invalid JSON RPC hosts".to_owned())?]);
+// 	}
+
+// 	Ok(config)
+// }

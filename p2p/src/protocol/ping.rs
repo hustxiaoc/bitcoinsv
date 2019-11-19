@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use time;
-use bytes::Bytes;
+use crate::bytes::Bytes;
 use message::{Error, Payload, deserialize_payload};
 use message::types::{Ping, Pong};
 use message::common::Command;
-use protocol::Protocol;
-use net::PeerContext;
-use util::nonce::{NonceGenerator, RandomNonce};
+use crate::protocol::Protocol;
+use crate::net::PeerContext;
+use crate::util::nonce::{NonceGenerator, RandomNonce};
 
 /// Time that must pass since last message from this peer, before we send ping request
 const PING_INTERVAL_S: f64 = 60f64;
@@ -78,11 +78,11 @@ impl Protocol for PingProtocol {
 		self.state = State::WaitingTimeout(time::precise_time_s());
 		
 		if command == &Ping::command() {
-			let ping: Ping = try!(deserialize_payload(payload, self.context.info().version));
+			let ping: Ping = deserialize_payload(payload, self.context.info().version)?;
 			let pong = Pong::new(ping.nonce);
 			self.context.send_response_inline(&pong);
 		} else if command == &Pong::command() {
-			let pong: Pong = try!(deserialize_payload(payload, self.context.info().version));
+			let pong: Pong = deserialize_payload(payload, self.context.info().version)?;
 			if Some(pong.nonce) != self.last_ping_nonce.take() {
 				return Err(Error::InvalidCommand)
 			}

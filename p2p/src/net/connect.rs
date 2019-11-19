@@ -7,8 +7,8 @@ use tokio_core::net::{TcpStream, TcpStreamNew};
 use network::Magic;
 use message::Error;
 use message::types::Version;
-use io::{handshake, Handshake, Deadline, deadline};
-use net::{Config, Connection};
+use crate::io::{handshake, Handshake, Deadline, deadline};
+use crate::net::{Config, Connection};
 
 pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Deadline<Connect> {
 	let connect = Connect {

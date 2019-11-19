@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::path::PathBuf;
 use std::fs::create_dir_all;
 use app_dirs::{app_dir, AppDataType};
-use {storage, APP_INFO};
+use crate::{storage, APP_INFO};
 use db;
-use config::Config;
+use crate::config::Config;
 
 pub fn open_db(data_dir: &Option<String>, db_cache: usize) -> storage::SharedStore {
 	let db_path = match *data_dir {

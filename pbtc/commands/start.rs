@@ -5,9 +5,9 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::{create_sync_peers, create_local_sync_node, create_sync_connection_factory, SyncListener};
 use primitives::hash::H256;
-use util::{init_db, node_table_path};
-use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
-use super::super::rpc;
+use crate::util::{init_db, node_table_path};
+use crate::{config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
+// use super::super::rpc;
 
 enum BlockNotifierTask {
 	NewBlock(H256),
@@ -81,7 +81,7 @@ impl Drop for BlockNotifier {
 	}
 }
 
-pub fn start(cfg: config::Config) -> Result<(), String> {
+pub async fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
 
 	init_db(&cfg)?;
@@ -117,17 +117,8 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		local_sync_node.install_sync_listener(Box::new(BlockNotifier::new(block_notify_command)));
 	}
 
-	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
-	let rpc_deps = rpc::Dependencies {
-		network: cfg.network,
-		storage: cfg.db,
-		local_sync_node: local_sync_node,
-		p2p_context: p2p.context().clone(),
-		remote: el.remote(),
-	};
-	let _rpc_server = try!(rpc::new_http(cfg.rpc_config, rpc_deps));
-
-	try!(p2p.run().map_err(|_| "Failed to start p2p module"));
+	let p2p = p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string())?;
+	p2p.run().await;
 	el.run(p2p::forever()).unwrap();
 	Ok(())
 }

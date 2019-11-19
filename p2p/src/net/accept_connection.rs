@@ -5,8 +5,8 @@ use tokio_core::reactor::Handle;
 use tokio_core::net::TcpStream;
 use network::Magic;
 use message::{MessageResult};
-use io::{accept_handshake, AcceptHandshake, Deadline, deadline};
-use net::{Config, Connection};
+use crate::io::{accept_handshake, AcceptHandshake, Deadline, deadline};
+use crate::net::{Config, Connection};
 
 pub fn accept_connection(stream: TcpStream, handle: &Handle, config: &Config, address: net::SocketAddr) -> Deadline<AcceptConnection> {
 	let accept = AcceptConnection {

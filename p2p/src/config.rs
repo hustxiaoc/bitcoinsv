@@ -1,7 +1,7 @@
 use std::{net, path};
 use message::common::Services;
-use net::Config as NetConfig;
-use util::InternetProtocol;
+use crate::net::Config as NetConfig;
+use crate::util::InternetProtocol;
 
 #[derive(Debug, Clone)]
 pub struct Config {

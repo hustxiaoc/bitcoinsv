@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
 use message::{Payload, Message};
-use p2p::Context;
-use util::{PeerInfo, ConfigurableSynchronizer, ResponseQueue, Synchronizer, Responses};
+use crate::p2p::Context;
+use crate::util::{PeerInfo, ConfigurableSynchronizer, ResponseQueue, Synchronizer, Responses};
 use futures::{lazy, finished};
-use net::PeerStats;
+use crate::net::PeerStats;
 
 pub struct PeerContext {
 	context: Arc<Context>,

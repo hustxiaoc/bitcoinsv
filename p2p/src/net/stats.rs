@@ -1,7 +1,7 @@
 use std::time::Instant;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use util::interval::{Interval, RealInterval};
+use crate::util::interval::{Interval, RealInterval};
 
 use message::{Command, Payload};
 use message::types::{Ping, Pong};

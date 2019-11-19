@@ -4,7 +4,7 @@ use tokio_io::{AsyncRead, AsyncWrite};
 use message::{Message, MessageResult, Error};
 use message::types::{Version, Verack};
 use network::Magic;
-use io::{write_message, WriteMessage, ReadMessage, read_message};
+use crate::io::{write_message, WriteMessage, ReadMessage, read_message};
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: AsyncWrite + AsyncRead {
 	Handshake {

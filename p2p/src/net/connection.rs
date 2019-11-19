@@ -2,7 +2,7 @@ use std::net;
 use network::Magic;
 use message::common::Services;
 use message::types;
-use io::SharedTcpStream;
+use crate::io::SharedTcpStream;
 
 pub struct Connection {
 	pub stream: SharedTcpStream,

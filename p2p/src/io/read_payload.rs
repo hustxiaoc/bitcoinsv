@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use futures::{Poll, Future};
 use tokio_io::AsyncRead;
 use tokio_io::io::{read_exact, ReadExact};
-use bytes::Bytes;
-use hash::H32;
+use crate::bytes::Bytes;
+use crate::hash::H32;
 use crypto::checksum;
 use message::{Error, MessageResult, Payload, deserialize_payload};
 

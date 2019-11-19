@@ -5,8 +5,8 @@ use tokio_io::AsyncRead;
 use crypto::checksum;
 use network::Magic;
 use message::{Error, MessageHeader, MessageResult, Command};
-use bytes::Bytes;
-use io::{read_header, ReadHeader};
+use crate::bytes::Bytes;
+use crate::io::{read_header, ReadHeader};
 
 pub fn read_any_message<A>(a: A, magic: Magic) -> ReadAnyMessage<A> where A: AsyncRead {
 	ReadAnyMessage {

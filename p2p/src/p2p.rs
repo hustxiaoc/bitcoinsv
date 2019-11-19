@@ -1,6 +1,7 @@
+use tokio::prelude::*;
 use std::{io, net, error, time};
 use std::sync::Arc;
-use std::net::SocketAddr;
+use std::net::{ToSocketAddrs, SocketAddr, IpAddr};
 use parking_lot::RwLock;
 use futures::{Future, finished, failed};
 use futures::stream::Stream;
@@ -10,15 +11,19 @@ use tokio_core::net::{TcpListener, TcpStream};
 use tokio_core::reactor::{Handle, Remote, Timeout, Interval};
 use abstract_ns::Resolver;
 use ns_dns_tokio::DnsResolver;
-use message::{Payload, MessageResult, Message};
+use message::{types, Payload, MessageResult, Message, deserialize_payload};
 use message::common::Services;
 use message::types::addr::AddressEntry;
-use net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
-use util::{NodeTable, Node, NodeTableError, Direction};
-use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
-use {Config, PeerId};
-use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
-use io::DeadlineStatus;
+
+use crate::net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
+use crate::util::{NodeTable, Node, NodeTableError, Direction, PeerId};
+use crate::session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
+use crate::config::Config;
+use crate::protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef, BitcoinCodec, BitcoinMessage};
+use crate::io::DeadlineStatus;
+use tokio_dns::{resolve_ip_addr, CpuPoolResolver};
+use tokio::net::{ TcpStream as ScoketStream };
+use tokio_util::codec::{ Framed };
 
 pub type BoxedEmptyFuture = Box<dyn Future<Item=(), Error=()> + Send>;
 
@@ -46,7 +51,7 @@ impl Context {
 		let context = Context {
 			connections: Default::default(),
 			connection_counter: ConnectionCounter::new(config.inbound_connections, config.outbound_connections),
-			node_table: RwLock::new(try!(NodeTable::from_file(config.preferable_services, &config.node_table_path))),
+			node_table: RwLock::new(NodeTable::from_file(config.preferable_services, &config.node_table_path)?),
 			pool: pool_handle,
 			remote: remote,
 			local_sync_node: local_sync_node,
@@ -259,7 +264,7 @@ impl Context {
 	/// Starts tcp server and listens for incomming connections.
 	pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
 		trace!("Starting tcp server");
-		let server = try!(TcpListener::bind(&config.local_address, handle));
+		let server = TcpListener::bind(&config.local_address, handle)?;
 		let server = Box::new(server.incoming()
 			.and_then(move |(stream, socket)| {
 				// because we acquire atomic value twice,
@@ -435,7 +440,7 @@ impl P2P {
 			.pool_size(config.threads)
 			.create();
 
-		let context = try!(Context::new(local_sync_node, pool.clone(), handle.remote().clone(), config.clone()));
+		let context = Context::new(local_sync_node, pool.clone(), handle.remote().clone(), config.clone())?;
 
 		let p2p = P2P {
 			event_loop_handle: handle.clone(),
@@ -447,18 +452,99 @@ impl P2P {
 		Ok(p2p)
 	}
 
-	pub fn run(&self) -> Result<(), Box<dyn error::Error>> {
+	pub async fn run(&self) -> Result<(), Box<dyn error::Error>> {
 		for peer in &self.config.peers {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
 
-		let resolver = try!(DnsResolver::system_config(&self.event_loop_handle));
+		let config = self.config.clone();
+		
+		tokio::spawn(async move {
+			let addr = "seed.bitcoin.sipa.be:8333";
+			let sockAddr = match addr.to_socket_addrs() {
+				Ok(mut it) => {
+					it.next().unwrap()
+				},
+				Err(_) => {
+					println!("error address {}", addr);
+					return;
+				}
+			};
+
+			let mut stream = ScoketStream::connect(&sockAddr).await.unwrap();
+			let mut sock = Framed::new(stream, BitcoinCodec::new(config.connection.magic));
+
+			println!("connected to {:?}", sockAddr);
+
+			// send a version message to remote node
+			let version = config.connection.version(&sockAddr);
+			sock.send(BitcoinMessage::handshake{
+				min_version: config.connection.protocol_minimum,
+				version: version.clone(),
+			}).await;
+
+			loop {
+				match sock.next().await {
+					Some(Ok(BitcoinMessage::message{
+						command, payload,
+					})) => {
+						println!("got message {}", command);
+
+						if command == types::Version::command() {
+							let message: types::Version = deserialize_payload(payload.as_ref(), version.version()).unwrap();
+							// send verack
+							sock.send(BitcoinMessage::verack).await;
+						} else if command == types::Verack::command() {
+							println!("peer is ready!");
+						} else if command == types::Inv::command() {
+							let message: types::Inv = deserialize_payload(payload.as_ref(), version.version()).unwrap();
+							println!("message {:?}", message);
+						}
+						// sock.get_ref().shutdown(net::Shutdown::Both);
+					},
+					_ => {
+						// bad peer
+						println!("we got nothing");
+						break;
+					},
+				}
+			}
+
+			// loop {
+			// 	let message = match sock.next().await {
+			// 		Some(Ok(line)) => {
+			// 			println!("read: line");
+			// 		},
+
+			// 		// We didn't get a line so we return early here.
+			// 		_ => {
+			// 			println!("Client disconnected.");
+			// 			// return;
+			// 		}
+			// 	};
+			// }	
+		});
+
+		let resolver = DnsResolver::system_config(&self.event_loop_handle)?;
+
 		for seed in &self.config.seeds {
-			self.connect_to_seednode(&resolver, seed);
+			// let result = resolve_ip_addr(seed).await;
+			// println!("seed is {}, result is {}", seed, result);
+			// tokio_dns::resolve_sock_addr_with(seed.as_str(), resolver1.clone()).await;			
+			// .await {
+			// 	Ok(addrs) => println!("Socket addresses {:#?}", addrs),
+			// 	Err(err) => println!("Error resolve address {:?}", err),
+			// }
+			// match tokio_dns::resolve_sock_addr("rust-lang.org:80").await {
+			// 	Ok(addrs) => println!("Socket addresses {:#?}", addrs),
+			// 	Err(err) => println!("Error resolve address {:?}", err),
+			// }
+			
+			// self.connect_to_seednode(&resolver, seed);
 		}
 
-		Context::autoconnect(self.context.clone(), &self.event_loop_handle);
-		try!(self.listen());
+		// Context::autoconnect(self.context.clone(), &self.event_loop_handle);
+		self.listen()?;
 		Ok(())
 	}
 
@@ -474,7 +560,7 @@ impl P2P {
 			match result {
 				Ok(address) => match address.pick_one() {
 					Some(socket) => {
-						trace!("Dns lookup of seednode {} finished. Connecting to {}", owned_seednode, socket);
+						println!("Dns lookup of seednode {} finished. Connecting to {}", owned_seednode, socket);
 						Context::connect::<SeednodeSessionFactory>(context, socket);
 					},
 					None => {
@@ -482,7 +568,7 @@ impl P2P {
 					}
 				},
 				Err(_err) => {
-					trace!("Dns lookup of seednode {} failed", owned_seednode);
+					println!("Dns lookup of seednode {} failed", owned_seednode);
 				}
 			}
 			finished(())
@@ -492,7 +578,7 @@ impl P2P {
 	}
 
 	fn listen(&self) -> Result<(), Box<dyn error::Error>> {
-		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
+		let server = Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone())?;
 		self.event_loop_handle.spawn(server);
 		Ok(())
 	}

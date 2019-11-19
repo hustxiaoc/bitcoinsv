@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
-use bytes::Bytes;
+use crate::bytes::Bytes;
 use message::{Error, Command, deserialize_payload, Payload};
 use message::types::{GetAddr, Addr};
-use protocol::Protocol;
-use net::PeerContext;
-use util::Direction;
+use crate::protocol::Protocol;
+use crate::net::PeerContext;
+use crate::util::Direction;
 
 pub struct AddrProtocol {
 	/// Context
@@ -34,12 +34,12 @@ impl Protocol for AddrProtocol {
 		// normal nodes send addr message only after they receive getaddr message
 		// meanwhile seednodes, surprisingly, send addr message even before they are asked for it
 		if command == &GetAddr::command() {
-			let _: GetAddr = try!(deserialize_payload(payload, self.context.info().version));
+			let _: GetAddr = deserialize_payload(payload, self.context.info().version)?;
 			let entries = self.context.global().node_table_entries().into_iter().map(Into::into).collect();
 			let addr = Addr::new(entries);
 			self.context.send_response_inline(&addr);
 		} else if command == &Addr::command() {
-			let addr: Addr = try!(deserialize_payload(payload, self.context.info().version));
+			let addr: Addr = deserialize_payload(payload, self.context.info().version)?;
 			match addr {
 				Addr::V0(_) => {
 					unreachable!("This version of protocol is not supported!");
