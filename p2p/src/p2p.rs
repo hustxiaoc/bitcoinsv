@@ -468,111 +468,40 @@ impl P2P {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
 
-		let config = self.config.clone();
-		let context = self.context.clone();
-		tokio::spawn(async move {
-			let addr = "seed.bitcoin.sipa.be:8333";
-			let sockAddr = match addr.to_socket_addrs() {
-				Ok(mut it) => {
-					it.next().unwrap()
-				},
-				Err(_) => {
-					println!("error address {}", addr);
-					return;
-				}
-			};
-
-			println!("addr is {}", sockAddr);
-
-			let version = config.connection.version(&sockAddr);
-
-			let mut peer = Peer::new(context.clone(), sockAddr, version, config.connection.magic, config.connection.protocol_minimum);
-
-			println!("prepare for connecting");
-			peer.connect().await;
-
-			// let mut stream = ScoketStream::connect(&sockAddr).await.unwrap();
-			// let mut sock = Framed::new(stream, BitcoinCodec::new(config.connection.magic, version.clone()));
-			
-			// let mut connection = ConnectionNew {
-			// 	// stream: sock.get_ref(),
-			// 	services: Default::default(),
-			// 	version: 0,
-			// 	version_message: Default::default(),
-			// 	magic: config.connection.magic,
-			// 	address: sockAddr.clone(),
-			// };
-
-			// println!("connected to {:?}", sockAddr);
-
-			// // send a version message to remote node
-			
-			// sock.send(BitcoinMessage::version(config.connection.protocol_minimum)).await;
-
-			// loop {
-			// 	match sock.next().await {
-			// 		Some(Ok(BitcoinMessage::message{
-			// 			command, payload,
-			// 		})) => {
-			// 			println!("got message {}", command);
-
-			// 			if command == types::Version::command() {
-			// 				let message: types::Version = deserialize_payload(payload.as_ref(), version.version()).unwrap();
-			// 				// send verack
-
-			// 				println!("message {:?}", message);
-			// 				connection.services = message.services();
-			// 				connection.version = cmp::min(version.version(), message.version());
-			// 				connection.version_message = message;
-							
-			// 				sock.send(BitcoinMessage::verack).await;
-			// 			} else if command == types::Verack::command() {
-			// 				println!("peer is ready!");
-							
-							
-			// 				context.node_table.write().insert(connection.address, connection.services);
-			// 				let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection.clone(), Direction::Outbound);
-
-			// 				// initialize session and then start reading messages
-			// 				channel.session().initialize();		
-
-			// 				// channel.session().on_message(command, payload)					
-			// 			} else if command == types::Ping::command() {
-			// 				let message: types::Ping = deserialize_payload(payload.as_ref(), version.version()).unwrap();
-			// 				println!("message {:?}", message);
-			// 				// we send pong message back
-			// 				sock.send(BitcoinMessage::pong(message.nonce)).await;
-			// 			}
-			// 		},
-			// 		_ => {
-			// 			// bad peer
-			// 			println!("we got nothing");
-			// 			break;
-			// 		},
-			// 	}
-			// }
-		});
-
-		let resolver = DnsResolver::system_config(&self.event_loop_handle)?;
-
+		
 		for seed in &self.config.seeds {
-			// let result = resolve_ip_addr(seed).await;
-			// println!("seed is {}, result is {}", seed, result);
-			// tokio_dns::resolve_sock_addr_with(seed.as_str(), resolver1.clone()).await;			
-			// .await {
-			// 	Ok(addrs) => println!("Socket addresses {:#?}", addrs),
-			// 	Err(err) => println!("Error resolve address {:?}", err),
-			// }
-			// match tokio_dns::resolve_sock_addr("rust-lang.org:80").await {
-			// 	Ok(addrs) => println!("Socket addresses {:#?}", addrs),
-			// 	Err(err) => println!("Error resolve address {:?}", err),
-			// }
-			
-			// self.connect_to_seednode(&resolver, seed);
+			println!("seed is {}", seed);
+			let addr = seed.clone();
+			let config = self.config.clone();
+			let context = self.context.clone();
+
+			tokio::spawn(async move {
+				let sockAddr = match addr.to_socket_addrs() {
+					Ok(mut it) => {
+						match it.next() {
+							Some(ret) => ret,
+							None => {
+								return;
+							},
+						}
+					},
+					Err(_) => {
+						println!("error address {}", addr);
+						return;
+					}
+				};
+
+				println!("addr is {}", sockAddr);
+
+				let version = config.connection.version(&sockAddr);
+
+				let mut peer = Peer::new(context.clone(), sockAddr, version, config.connection.magic, config.connection.protocol_minimum);
+
+				println!("prepare for connecting");
+				peer.connect().await;
+			});
 		}
 
-		// Context::autoconnect(self.context.clone(), &self.event_loop_handle);
-		// self.listen()?;
 		Ok(())
 	}
 

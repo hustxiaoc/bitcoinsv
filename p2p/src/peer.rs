@@ -1,5 +1,6 @@
 use tokio::prelude::*;
 use std::{io, net, error, time, cmp};
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::net::{ToSocketAddrs, SocketAddr, IpAddr};
 use parking_lot::RwLock;
@@ -71,7 +72,7 @@ impl Peer {
         };
     }
 
-    pub async fn connect(&mut self) {
+    pub async fn connect(&mut self) -> Result<(), Box<dyn Error>> {
         let local_version = self.local_version.clone();
         let magic = self.magic;
         let sockAddr = self.addr.clone();
@@ -79,7 +80,8 @@ impl Peer {
 
         let (mut tx, mut rx) = mpsc::unbounded_channel::<BitcoinMessage>();
 
-        let mut stream = ScoketStream::connect(&sockAddr).await.unwrap();
+        let mut stream = ScoketStream::connect(&sockAddr).await?;
+
         let (mut writer, mut reader) = Framed::new(stream, BitcoinCodec::new(magic, local_version.clone())).split();
 
         self.tx = Some(tx.clone());
@@ -155,5 +157,7 @@ impl Peer {
                 },
             }
         };   
+
+        Ok(())
     }
 }
