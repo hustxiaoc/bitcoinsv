@@ -41,8 +41,8 @@ panic = 'abort'
 debug = true
 
 [[bin]]
-path = "pbtc/main.rs"
-name = "pbtc"
+path = "bin/main.rs"
+name = "bin"
 
 [workspace]
 members = ["bencher"]
