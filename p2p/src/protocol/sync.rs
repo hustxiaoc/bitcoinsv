@@ -210,6 +210,7 @@ impl Protocol for SyncProtocol {
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {
+		println!("sync protocol onmessage {}",  command);
 		let version = self.context.info().version;
 		if command == &types::Inv::command() {
 			// we are synchronizing => we ask only for blocks with known headers
@@ -217,7 +218,8 @@ impl Protocol for SyncProtocol {
 			// we are synchronizing
 			// => we ignore all transactions until it is completed => there are no useful transactions hashes for us
 			if self.state.synchronizing() {
-				return Ok(());
+				println!("self.state.synchronizing");
+				// return Ok(());
 			}
 
 			let message: types::Inv = deserialize_payload(payload, version)?;

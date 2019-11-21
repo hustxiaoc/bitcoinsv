@@ -27,9 +27,11 @@ mod util;
 mod config;
 mod event_loop;
 mod p2p;
+mod peer;
 
 pub use primitives::{hash, bytes};
 
+pub use peer::Peer;
 pub use config::Config;
 pub use net::Config as NetConfig;
 pub use p2p::{P2P, Context};

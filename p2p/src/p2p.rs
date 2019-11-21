@@ -1,5 +1,5 @@
 use tokio::prelude::*;
-use std::{io, net, error, time};
+use std::{io, net, error, time, cmp};
 use std::sync::Arc;
 use std::net::{ToSocketAddrs, SocketAddr, IpAddr};
 use parking_lot::RwLock;
@@ -15,15 +15,16 @@ use message::{types, Payload, MessageResult, Message, deserialize_payload };
 use message::common::Services;
 use message::types::addr::AddressEntry;
 
-use crate::net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
+use crate::net::{connect, Connection, ConnectionNew, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
 use crate::util::{NodeTable, Node, NodeTableError, Direction, PeerId};
 use crate::session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
 use crate::config::Config;
 use crate::protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef, BitcoinCodec, BitcoinMessage};
-use crate::io::DeadlineStatus;
+use crate::io::{DeadlineStatus, SharedTcpStream};
 use tokio_dns::{resolve_ip_addr, CpuPoolResolver};
 use tokio::net::{ TcpStream as ScoketStream };
 use tokio_util::codec::{ Framed };
+use crate::Peer;
 
 pub type BoxedEmptyFuture = Box<dyn Future<Item=(), Error=()> + Send>;
 
@@ -87,6 +88,10 @@ impl Context {
 	/// Returns addresses of recently active nodes. Sorted and limited to 1000.
 	pub fn node_table_entries(&self) -> Vec<Node> {
 		self.node_table.read().recently_active_nodes(self.config.internet_protocol)
+	}
+
+	pub fn add_connection<T>(context: Arc<Context>, connection: ConnectionNew, direction: Direction) -> Arc<Channel> where T: SessionFactory {
+		context.connections.store::<T>(context.clone(), connection, direction)
 	}
 
 	/// Updates node table.
@@ -160,44 +165,47 @@ impl Context {
 	fn connect_future<T>(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture where T: SessionFactory {
 		trace!("Trying to connect to: {}", socket);
 		let connection = connect(&socket, handle, config);
-		Box::new(connection.then(move |result| {
-			match result {
-				Ok(DeadlineStatus::Meet(Ok(connection))) => {
-					// successfull hanshake
-					trace!("Connected to {}", connection.address);
-					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store::<T>(context.clone(), connection, Direction::Outbound);
 
-					// initialize session and then start reading messages
-					channel.session().initialize();
-					Context::on_message(context, channel)
-				},
-				Ok(DeadlineStatus::Meet(Err(_))) => {
-					// protocol error
-					trace!("Handshake with {} failed", socket);
-					// TODO: close socket
-					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_outbound_connection();
-					Box::new(finished(Ok(())))
-				},
-				Ok(DeadlineStatus::Timeout) => {
-					// connection time out
-					trace!("Handshake with {} timed out", socket);
-					// TODO: close socket
-					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_outbound_connection();
-					Box::new(finished(Ok(())))
-				},
-				Err(_) => {
-					// network error
-					trace!("Unable to connect to {}", socket);
-					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_outbound_connection();
-					Box::new(finished(Ok(())))
-				}
-			}
-		})
-		.then(|_| finished(())))
+		Box::new(finished(()))
+
+		// Box::new(connection.then(move |result| {
+		// 	match result {
+		// 		// Ok(DeadlineStatus::Meet(Ok(connection))) => {
+		// 		// 	// successfull hanshake
+		// 		// 	trace!("Connected to {}", connection.address);
+		// 		// 	context.node_table.write().insert(connection.address, connection.services);
+		// 		// 	let channel = context.connections.store::<T>(context.clone(), connection, Direction::Outbound);
+
+		// 		// 	// initialize session and then start reading messages
+		// 		// 	channel.session().initialize();
+		// 		// 	Context::on_message(context, channel)
+		// 		// },
+		// 		Ok(DeadlineStatus::Meet(Err(_))) => {
+		// 			// protocol error
+		// 			trace!("Handshake with {} failed", socket);
+		// 			// TODO: close socket
+		// 			context.node_table.write().note_failure(&socket);
+		// 			context.connection_counter.note_close_outbound_connection();
+		// 			Box::new(finished(Ok(())))
+		// 		},
+		// 		Ok(DeadlineStatus::Timeout) => {
+		// 			// connection time out
+		// 			trace!("Handshake with {} timed out", socket);
+		// 			// TODO: close socket
+		// 			context.node_table.write().note_failure(&socket);
+		// 			context.connection_counter.note_close_outbound_connection();
+		// 			Box::new(finished(Ok(())))
+		// 		},
+		// 		Err(_) => {
+		// 			// network error
+		// 			trace!("Unable to connect to {}", socket);
+		// 			context.node_table.write().note_failure(&socket);
+		// 			context.connection_counter.note_close_outbound_connection();
+		// 			Box::new(finished(Ok(())))
+		// 		}
+		// 	}
+		// })
+		// .then(|_| finished(())))
 	}
 
 	/// Connect to socket using given context.
@@ -213,112 +221,112 @@ impl Context {
 		Self::connect::<NormalSessionFactory>(context, socket)
 	}
 
-	pub fn accept_connection_future(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, handle: &Handle, config: NetConfig) -> BoxedEmptyFuture {
-		Box::new(accept_connection(stream, handle, &config, socket).then(move |result| {
-			match result {
-				Ok(DeadlineStatus::Meet(Ok(connection))) => {
-					// successfull hanshake
-					trace!("Accepted connection from {}", connection.address);
-					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection, Direction::Inbound);
+	// pub fn accept_connection_future(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, handle: &Handle, config: NetConfig) -> BoxedEmptyFuture {
+	// 	Box::new(accept_connection(stream, handle, &config, socket).then(move |result| {
+	// 		match result {
+	// 			Ok(DeadlineStatus::Meet(Ok(connection))) => {
+	// 				// successfull hanshake
+	// 				trace!("Accepted connection from {}", connection.address);
+	// 				context.node_table.write().insert(connection.address, connection.services);
+	// 				let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection, Direction::Inbound);
 
-					// initialize session and then start reading messages
-					channel.session().initialize();
-					Context::on_message(context.clone(), channel)
-				},
-				Ok(DeadlineStatus::Meet(Err(err))) => {
-					// protocol error
-					trace!("Accepting handshake from {} failed with error: {}", socket, err);
-					// TODO: close socket
-					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_inbound_connection();
-					Box::new(finished(Ok(())))
-				},
-				Ok(DeadlineStatus::Timeout) => {
-					// connection time out
-					trace!("Accepting handshake from {} timed out", socket);
-					// TODO: close socket
-					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_inbound_connection();
-					Box::new(finished(Ok(())))
-				},
-				Err(_) => {
-					// network error
-					trace!("Accepting handshake from {} failed with network error", socket);
-					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_inbound_connection();
-					Box::new(finished(Ok(())))
-				}
-			}
-		})
-		.then(|_| finished(())))
-	}
+	// 				// initialize session and then start reading messages
+	// 				channel.session().initialize();
+	// 				Context::on_message(context.clone(), channel)
+	// 			},
+	// 			Ok(DeadlineStatus::Meet(Err(err))) => {
+	// 				// protocol error
+	// 				trace!("Accepting handshake from {} failed with error: {}", socket, err);
+	// 				// TODO: close socket
+	// 				context.node_table.write().note_failure(&socket);
+	// 				context.connection_counter.note_close_inbound_connection();
+	// 				Box::new(finished(Ok(())))
+	// 			},
+	// 			Ok(DeadlineStatus::Timeout) => {
+	// 				// connection time out
+	// 				trace!("Accepting handshake from {} timed out", socket);
+	// 				// TODO: close socket
+	// 				context.node_table.write().note_failure(&socket);
+	// 				context.connection_counter.note_close_inbound_connection();
+	// 				Box::new(finished(Ok(())))
+	// 			},
+	// 			Err(_) => {
+	// 				// network error
+	// 				trace!("Accepting handshake from {} failed with network error", socket);
+	// 				context.node_table.write().note_failure(&socket);
+	// 				context.connection_counter.note_close_inbound_connection();
+	// 				Box::new(finished(Ok(())))
+	// 			}
+	// 		}
+	// 	})
+	// 	.then(|_| finished(())))
+	// }
 
-	pub fn accept_connection(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, config: NetConfig) {
-		context.connection_counter.note_new_inbound_connection();
-		context.remote.clone().spawn(move |handle| {
-			context.pool.clone().spawn(Context::accept_connection_future(context, stream, socket, handle, config))
-		})
-	}
+	// pub fn accept_connection(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, config: NetConfig) {
+	// 	context.connection_counter.note_new_inbound_connection();
+	// 	context.remote.clone().spawn(move |handle| {
+	// 		context.pool.clone().spawn(Context::accept_connection_future(context, stream, socket, handle, config))
+	// 	})
+	// }
 
 	/// Starts tcp server and listens for incomming connections.
-	pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
-		trace!("Starting tcp server");
-		let server = TcpListener::bind(&config.local_address, handle)?;
-		let server = Box::new(server.incoming()
-			.and_then(move |(stream, socket)| {
-				// because we acquire atomic value twice,
-				// it may happen that accept slightly more connections than we need
-				// we don't mind
-				if context.connection_counter.inbound_connections_needed() > 0 {
-					Context::accept_connection(context.clone(), stream, socket, config.clone());
-				} else {
-					// ignore result
-					let _ = stream.shutdown(net::Shutdown::Both);
-				}
-				Ok(())
-			})
-			.for_each(|_| Ok(()))
-			.then(|_| finished(())));
-		Ok(server)
-	}
+	// pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
+	// 	trace!("Starting tcp server");
+	// 	let server = TcpListener::bind(&config.local_address, handle)?;
+	// 	let server = Box::new(server.incoming()
+	// 		.and_then(move |(stream, socket)| {
+	// 			// because we acquire atomic value twice,
+	// 			// it may happen that accept slightly more connections than we need
+	// 			// we don't mind
+	// 			if context.connection_counter.inbound_connections_needed() > 0 {
+	// 				Context::accept_connection(context.clone(), stream, socket, config.clone());
+	// 			} else {
+	// 				// ignore result
+	// 				let _ = stream.shutdown(net::Shutdown::Both);
+	// 			}
+	// 			Ok(())
+	// 		})
+	// 		.for_each(|_| Ok(()))
+	// 		.then(|_| finished(())));
+	// 	Ok(server)
+	// }
 
 	/// Called on incomming mesage.
-	pub fn on_message(context: Arc<Context>, channel: Arc<Channel>) -> IoFuture<MessageResult<()>> {
-		Box::new(channel.read_message().then(move |result| {
-			match result {
-				Ok(Ok((command, payload))) => {
-					// successful read
-					trace!("Received {} message from {}", command, channel.peer_info().address);
-					// handle message and read the next one
-					match channel.session().on_message(command, payload) {
-						Ok(_) => {
-							context.node_table.write().note_used(&channel.peer_info().address);
-							let on_message = Context::on_message(context.clone(), channel);
-							context.spawn(on_message);
-							Box::new(finished(Ok(())))
-						},
-						Err(err) => {
-							// protocol error
-							context.close_channel_with_error(channel.peer_info().id, &err);
-							Box::new(finished(Err(err)))
-						}
-					}
-				},
-				Ok(Err(err)) => {
-					// protocol error
-					context.close_channel_with_error(channel.peer_info().id, &err);
-					Box::new(finished(Err(err)))
-				},
-				Err(err) => {
-					// network error
-					// TODO: remote node was just turned off. should we mark it as not reliable?
-					context.close_channel_with_error(channel.peer_info().id, &err);
-					Box::new(failed(err))
-				}
-			}
-		}))
-	}
+	// pub fn on_message(context: Arc<Context>, channel: Arc<Channel>) -> IoFuture<MessageResult<()>> {
+	// 	Box::new(channel.read_message().then(move |result| {
+	// 		match result {
+	// 			Ok(Ok((command, payload))) => {
+	// 				// successful read
+	// 				trace!("Received {} message from {}", command, channel.peer_info().address);
+	// 				// handle message and read the next one
+	// 				match channel.session().on_message(command, payload) {
+	// 					Ok(_) => {
+	// 						context.node_table.write().note_used(&channel.peer_info().address);
+	// 						let on_message = Context::on_message(context.clone(), channel);
+	// 						context.spawn(on_message);
+	// 						Box::new(finished(Ok(())))
+	// 					},
+	// 					Err(err) => {
+	// 						// protocol error
+	// 						context.close_channel_with_error(channel.peer_info().id, &err);
+	// 						Box::new(finished(Err(err)))
+	// 					}
+	// 				}
+	// 			},
+	// 			Ok(Err(err)) => {
+	// 				// protocol error
+	// 				context.close_channel_with_error(channel.peer_info().id, &err);
+	// 				Box::new(finished(Err(err)))
+	// 			},
+	// 			Err(err) => {
+	// 				// network error
+	// 				// TODO: remote node was just turned off. should we mark it as not reliable?
+	// 				context.close_channel_with_error(channel.peer_info().id, &err);
+	// 				Box::new(failed(err))
+	// 			}
+	// 		}
+	// 	}))
+	// }
 
 	/// Send message to a channel with given peer id.
 	pub fn send_to_peer<T>(context: Arc<Context>, peer: PeerId, payload: &T, serialization_flags: u32) -> IoFuture<()> where T: Payload {
@@ -327,7 +335,9 @@ impl Context {
 				let info = channel.peer_info();
 				let message = Message::with_flags(info.magic, info.version, payload, serialization_flags).expect("failed to create outgoing message");
 				channel.session().stats().lock().report_send(T::command().into(), message.len());
-				Context::send(context, channel, message)
+				// Context::send(context, channel, message)
+				channel.write_message(message);
+				Box::new(finished(()))
 			},
 			None => {
 				// peer no longer exists.
@@ -350,21 +360,22 @@ impl Context {
 
 	/// Send message using given channel.
 	pub fn send<T>(_context: Arc<Context>, channel: Arc<Channel>, message: T) -> IoFuture<()> where T: AsRef<[u8]> + Send + 'static {
+		Box::new(finished(()))
 		//trace!("Sending {} message to {}", T::command(), channel.peer_info().address);
-		Box::new(channel.write_message(message).then(move |result| {
-			match result {
-				Ok(_) => {
-					// successful send
-					//trace!("Sent {} message to {}", T::command(), channel.peer_info().address);
-					Box::new(finished(()))
-				},
-				Err(err) => {
-					// network error
-					// closing connection is handled in on_message`
-					Box::new(failed(err))
-				},
-			}
-		}))
+		// Box::new(channel.write_message(message).then(move |result| {
+		// 	match result {
+		// 		Ok(_) => {
+		// 			// successful send
+		// 			//trace!("Sent {} message to {}", T::command(), channel.peer_info().address);
+		// 			Box::new(finished(()))
+		// 		},
+		// 		Err(err) => {
+		// 			// network error
+		// 			// closing connection is handled in on_message`
+		// 			Box::new(failed(err))
+		// 		},
+		// 	}
+		// }))
 	}
 
 	/// Close channel with given peer info.
@@ -458,7 +469,7 @@ impl P2P {
 		}
 
 		let config = self.config.clone();
-		
+		let context = self.context.clone();
 		tokio::spawn(async move {
 			let addr = "seed.bitcoin.sipa.be:8333";
 			let sockAddr = match addr.to_socket_addrs() {
@@ -471,47 +482,75 @@ impl P2P {
 				}
 			};
 
+			println!("addr is {}", sockAddr);
+
 			let version = config.connection.version(&sockAddr);
-			let mut stream = ScoketStream::connect(&sockAddr).await.unwrap();
-			let mut sock = Framed::new(stream, BitcoinCodec::new(config.connection.magic, version.clone()));
 
-			println!("connected to {:?}", sockAddr);
+			let mut peer = Peer::new(context.clone(), sockAddr, version, config.connection.magic, config.connection.protocol_minimum);
 
-			// send a version message to remote node
+			println!("prepare for connecting");
+			peer.connect().await;
+
+			// let mut stream = ScoketStream::connect(&sockAddr).await.unwrap();
+			// let mut sock = Framed::new(stream, BitcoinCodec::new(config.connection.magic, version.clone()));
 			
-			sock.send(BitcoinMessage::version(config.connection.protocol_minimum)).await;
+			// let mut connection = ConnectionNew {
+			// 	// stream: sock.get_ref(),
+			// 	services: Default::default(),
+			// 	version: 0,
+			// 	version_message: Default::default(),
+			// 	magic: config.connection.magic,
+			// 	address: sockAddr.clone(),
+			// };
 
-			loop {
-				match sock.next().await {
-					Some(Ok(BitcoinMessage::message{
-						command, payload,
-					})) => {
-						println!("got message {}", command);
+			// println!("connected to {:?}", sockAddr);
 
-						if command == types::Version::command() {
-							let message: types::Version = deserialize_payload(payload.as_ref(), version.version()).unwrap();
-							// send verack
-							sock.send(BitcoinMessage::verack).await;
-						} else if command == types::Verack::command() {
-							println!("peer is ready!");
-						} else if command == types::Inv::command() {
-							let message: types::Inv = deserialize_payload(payload.as_ref(), version.version()).unwrap();
-							// println!("message {:?}", message);
-						} else if command == types::Ping::command() {
-							let message: types::Ping = deserialize_payload(payload.as_ref(), version.version()).unwrap();
-							println!("message {:?}", message);
-							// we send pong message back
-							sock.send(BitcoinMessage::pong(message.nonce)).await;
-						}
-						// sock.get_ref().shutdown(net::Shutdown::Both);
-					},
-					_ => {
-						// bad peer
-						println!("we got nothing");
-						break;
-					},
-				}
-			}
+			// // send a version message to remote node
+			
+			// sock.send(BitcoinMessage::version(config.connection.protocol_minimum)).await;
+
+			// loop {
+			// 	match sock.next().await {
+			// 		Some(Ok(BitcoinMessage::message{
+			// 			command, payload,
+			// 		})) => {
+			// 			println!("got message {}", command);
+
+			// 			if command == types::Version::command() {
+			// 				let message: types::Version = deserialize_payload(payload.as_ref(), version.version()).unwrap();
+			// 				// send verack
+
+			// 				println!("message {:?}", message);
+			// 				connection.services = message.services();
+			// 				connection.version = cmp::min(version.version(), message.version());
+			// 				connection.version_message = message;
+							
+			// 				sock.send(BitcoinMessage::verack).await;
+			// 			} else if command == types::Verack::command() {
+			// 				println!("peer is ready!");
+							
+							
+			// 				context.node_table.write().insert(connection.address, connection.services);
+			// 				let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection.clone(), Direction::Outbound);
+
+			// 				// initialize session and then start reading messages
+			// 				channel.session().initialize();		
+
+			// 				// channel.session().on_message(command, payload)					
+			// 			} else if command == types::Ping::command() {
+			// 				let message: types::Ping = deserialize_payload(payload.as_ref(), version.version()).unwrap();
+			// 				println!("message {:?}", message);
+			// 				// we send pong message back
+			// 				sock.send(BitcoinMessage::pong(message.nonce)).await;
+			// 			}
+			// 		},
+			// 		_ => {
+			// 			// bad peer
+			// 			println!("we got nothing");
+			// 			break;
+			// 		},
+			// 	}
+			// }
 		});
 
 		let resolver = DnsResolver::system_config(&self.event_loop_handle)?;
@@ -533,7 +572,7 @@ impl P2P {
 		}
 
 		// Context::autoconnect(self.context.clone(), &self.event_loop_handle);
-		self.listen()?;
+		// self.listen()?;
 		Ok(())
 	}
 
@@ -567,8 +606,8 @@ impl P2P {
 	}
 
 	fn listen(&self) -> Result<(), Box<dyn error::Error>> {
-		let server = Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone())?;
-		self.event_loop_handle.spawn(server);
+		// let server = Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone())?;
+		// self.event_loop_handle.spawn(server);
 		Ok(())
 	}
 

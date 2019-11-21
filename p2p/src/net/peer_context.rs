@@ -61,13 +61,14 @@ impl PeerContext {
 
 	/// Request is always automatically send.
 	pub fn send_request<T>(&self, payload: &T) where T: Payload {
+		println!("peer context send_request");
 		self.send_request_with_flags(payload, 0)
 	}
 
 	/// Request is always automatically send.
 	pub fn send_request_with_flags<T>(&self, payload: &T, serialization_flags: u32) where T: Payload {
-		let send = Context::send_to_peer(self.context.clone(), self.info.id, payload, serialization_flags);
-		self.context.spawn(send);
+		Context::send_to_peer(self.context.clone(), self.info.id, payload, serialization_flags);
+		// self.context.spawn(send);
 	}
 
 	pub fn declare_response(&self) -> u32 {

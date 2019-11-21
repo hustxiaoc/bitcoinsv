@@ -219,6 +219,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv) {
 		// else ask for all unknown transactions and blocks
+		println!("client core on_inventory {:?}", peer_index);
 		let is_segwit_possible = self.chain.is_segwit_possible();
 		let unknown_inventory: Vec<_> = message.inventory.into_iter()
 			.filter(|item| {

@@ -1,9 +1,9 @@
 use std::{mem, net};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::{HashMap, HashSet};
 use parking_lot::RwLock;
-use crate::net::{Connection, Channel};
+use crate::net::{Connection, Channel, ConnectionNew};
 use crate::p2p::Context;
 use crate::session::{SessionFactory};
 use crate::util::{Direction, PeerInfo, PeerId};
@@ -46,7 +46,7 @@ impl Connections {
 
 	/// Stores new channel.
 	/// Returnes a shared pointer to it.
-	pub fn store<T>(&self, context: Arc<Context>, connection: Connection, direction: Direction) -> Arc<Channel> where T: SessionFactory {
+	pub fn store<T>(&self, context: Arc<Context>, connection: ConnectionNew, direction: Direction) -> Arc<Channel> where T: SessionFactory {
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
 
 		let peer_info = PeerInfo {
@@ -60,7 +60,7 @@ impl Connections {
 		};
 
 		let session = T::new_session(context, peer_info.clone(), SYNCHRONOUS_RESPONSES);
-		let channel = Arc::new(Channel::new(connection.stream, peer_info, session));
+		let channel = Arc::new(Channel::new(connection.tx.clone(), peer_info, session));
 		self.channels.write().insert(id, channel.clone());
 		channel
 	}

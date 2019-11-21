@@ -31,6 +31,7 @@ pub enum BitcoinMessage {
     pong(u64),
     version(u32),
     verack,
+    raw(Bytes),
     message {
         command: Command,
         payload: Bytes,
@@ -118,22 +119,31 @@ impl Encoder for BitcoinCodec {
     fn encode(&mut self, item: Self::Item, buf: &mut BytesMut) -> Result<(), LinesCodecError> {
         match item {
             BitcoinMessage::version(min_version) => {
-                println!("magic = {:?}, min_version = {:?},", self.magic, min_version);
+                // println!("magic = {:?}, min_version = {:?},", self.magic, min_version);
                 let m = Message::new(self.magic, self.version.version(), &self.version).expect("version message should always be serialized correctly");
+                buf.reserve(m.len());
                 buf.put(m.as_ref());
             },
 
             BitcoinMessage::verack => {
-                println!("send verack message");
+                // println!("send verack message");
                 let m = Message::new(self.magic, 0, &Verack).expect("verack message should always be serialized correctly");
+                buf.reserve(m.len());
                 buf.put(m.as_ref());
             },
 
             BitcoinMessage::pong(nonce) => {
-                println!("send pong message");
+                // println!("send pong message");
                 let pong = Pong::new(nonce);
                 let m = Message::new(self.magic, self.version.version(), &pong).expect("failed to create outgoing message");
+                buf.reserve(m.len());
                 buf.put(m.as_ref());
+            },
+
+            BitcoinMessage::raw(message) => {
+                buf.reserve(message.len());
+                // println!("send raw message");
+                buf.put(message.as_ref());
             },
 
             _ => {
