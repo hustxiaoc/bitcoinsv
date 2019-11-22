@@ -464,11 +464,10 @@ impl P2P {
 	}
 
 	pub async fn run(&self) -> Result<(), Box<dyn error::Error>> {
-		for peer in &self.config.peers {
-			self.connect::<NormalSessionFactory>(*peer);
-		}
+		// for peer in &self.config.peers {
+		// 	self.connect::<NormalSessionFactory>(*peer);
+		// }
 
-		
 		for seed in &self.config.seeds {
 			println!("seed is {}", seed);
 			let addr = seed.clone();

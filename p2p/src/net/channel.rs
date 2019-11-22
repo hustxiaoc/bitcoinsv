@@ -8,13 +8,13 @@ use crate::protocol::{BitcoinMessage};
 use crate::bytes::Bytes;
 
 pub struct Channel {
-	tx: Arc<Mutex<UnboundedSender<BitcoinMessage>>>,
+	tx: UnboundedSender<BitcoinMessage>,
 	peer_info: PeerInfo,
 	session: Session,
 }
 
 impl Channel {
-	pub fn new(tx: Arc<Mutex<UnboundedSender<BitcoinMessage>>>, peer_info: PeerInfo, session: Session) -> Self {
+	pub fn new(tx: UnboundedSender<BitcoinMessage>, peer_info: PeerInfo, session: Session) -> Self {
 		Channel {
 			tx: tx,
 			peer_info: peer_info,
@@ -24,7 +24,7 @@ impl Channel {
 
 	pub fn write_message<T>(&self, message: T) where T: AsRef<[u8]> {
 		println!("channel write message");
-		self.tx.lock().unwrap().try_send(BitcoinMessage::raw(Bytes::from(message.as_ref())));
+		self.tx.clone().try_send(BitcoinMessage::raw(Bytes::from(message.as_ref())));
 	}
 
 	// pub fn read_message(&self) -> ReadAnyMessage<SharedTcpStream> {

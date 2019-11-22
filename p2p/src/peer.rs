@@ -61,7 +61,7 @@ impl Peer {
         }
     }
 
-    pub fn send_request(&mut self, message: BitcoinMessage) {
+    fn send_request(&mut self, message: BitcoinMessage) {
         match self.tx {
             Some(ref mut tx) => {
                 tx.try_send(message);
@@ -120,7 +120,7 @@ impl Peer {
 
                         if self.channel.is_none() {
                             let connection = ConnectionNew {
-                                tx: Arc::new(Mutex::new(tx.clone())),
+                                tx: tx.clone(),
                                 services: Default::default(),
                                 version: 0,
                                 version_message: Default::default(),

@@ -20,8 +20,7 @@ pub struct Connection {
 
 #[derive(Clone)]
 pub struct ConnectionNew {
-	// pub stream: &'a TcpStream,
-	pub tx: Arc<Mutex<UnboundedSender<BitcoinMessage>>>,
+	pub tx: UnboundedSender<BitcoinMessage>,
 	pub version: u32,
 	pub version_message: types::Version,
 	pub magic: Magic,
