@@ -89,7 +89,7 @@ impl Peer {
         println!("connected to {:?}", sockAddr);
 
         // send a version message to remote node
-        writer.send(BitcoinMessage::version(protocol_minimum)).await;
+        writer.send(BitcoinMessage::version(protocol_minimum)).await?;
 
         tokio::spawn(async move {
             loop {

@@ -27,7 +27,7 @@ import = { path = "import" }
 logs = { path = "logs" }
 rpc = { path = "rpc" }
 primitives = { path = "primitives" }
-tokio = { version = "=0.2.0-alpha.6", path = "../tokio/tokio" }
+tokio = { version = "0.2.0-alpha.6"}
 
 [profile.dev]
 debug = true

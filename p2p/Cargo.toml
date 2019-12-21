@@ -23,7 +23,7 @@ message = { path = "../message" }
 serialization = { path = "../serialization" }
 network = { path = "../network" }
 
-tokio = { version = "=0.2.0-alpha.6", path = "../../tokio/tokio" }
-tokio-util = { version = "=0.2.0-alpha.6", path = "../../tokio/tokio-util" }
+tokio = { version = "0.2.0-alpha.6" }
+tokio-util = { version = "0.2.0-alpha.6"}
 tokio-dns-unofficial="0.4.0"
 bytes = "0.4.7"
